@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/bin/perl -w
 # irpg bot by milki
 # original script by jotun, jotun@idlerpg.net, et al. See http://idlerpg.net/
 #
@@ -28,7 +28,7 @@
 
 use strict;
 use warnings;
-use IO::Socket;
+use IO::Socket::SSL;
 use IO::Select;
 use Data::Dumper;
 use Getopt::Long;
@@ -190,9 +190,9 @@ loaddb();
 
 while (!$sock && $conn_tries < 2*@{$opts{servers}}) {
     debug("Connecting to $opts{servers}->[0]...");
-    my %sockinfo = (PeerAddr => $opts{servers}->[0]);
+    my %sockinfo = (PeerAddr => $opts{servers}->[0], SSL_verify_mode => SSL_VERIFY_NONE);
     if ($opts{localaddr}) { $sockinfo{LocalAddr} = $opts{localaddr}; }
-    $sock = IO::Socket::INET->new(%sockinfo) or
+    $sock = IO::Socket::SSL->new(%sockinfo) or
         debug("Error: failed to connect: $!\n");
     ++$conn_tries;
     if (!$sock) {
@@ -218,7 +218,7 @@ while (1) {
     if (defined($readable)) {
         my $fh = $readable->[0];
         my $buffer2;
-        $fh->recv($buffer2,512,0);
+        $fh->sysread($buffer2,512,0);
         if (length($buffer2)) {
             $buffer .= $buffer2;
             while (index($buffer,"\n") != -1) {
