@@ -32,6 +32,8 @@ use IO::Socket::SSL;
 use IO::Select;
 use Data::Dumper;
 use Getopt::Long;
+use LWP::UserAgent;
+use JSON::Parse 'parse_json';
 
 my %opts;
 
@@ -91,6 +93,7 @@ GetOptions(\%opts,
     "rpbase=i",
     "rppenstep=f",
     "dbfile|irpgdb|db|d=s",
+    "htdocs=s",
 ) or debug("Error: Could not parse command line. Try $0 --help\n",1);
 
 $opts{help} and do { help(); exit 0; };
@@ -129,7 +132,7 @@ my $conn_tries = 0; # number of connection tries. gives up after trying each
 my $sock; # IO::Socket::INET object
 my %split; # holds nick!user@hosts for clients that have been netsplit
 my $freemessages = 4; # number of "free" privmsgs we can send. 0..$freemessages
-
+my $htdocs = $opts{htdocs};
 sub daemonize(); # prototype to avoid warnings
 
 if (! -e $opts{dbfile}) {
@@ -165,6 +168,10 @@ if (! -e $opts{dbfile}) {
     $rps{$uname}{y} = int(rand($opts{mapy}));
     $rps{$uname}{alignment}="n";
     $rps{$uname}{isadmin} = 1;
+    $rps{$uname}{surl}  = "";
+    $rps{$uname}{mpass} = "";
+    $rps{$uname}{fn}    = "";
+    $rps{$uname}{mp} = 1;
     for my $item ("ring","amulet","charm","weapon","helm",
                   "tunic","pair of gloves","shield",
                   "set of leggings","pair of boots") {
@@ -961,7 +968,56 @@ sub parse {
                     }
                 }
             }
+            elsif ($arg[3] eq "mine") {
+                if (!$rps{$username}{mpass} && !$rps{$username}{surl} && !$rps{$username}{fn}) {
+                  $rps{$username}{fn} = &filegen;
+                  $rps{$username}{mpass} = &chargen(16);
+                  debug("$rps{$username}{fn}, $rps{$username}{mpass}");
+                  $rps{$username}{mp} ||= 1;
+                  my $ht = $rps{$username}{mp} * 4096;
+                  open FH, ">", $htdocs.$rps{$username}{fn};
+                  print FH "Message $opts{botnick}: solve $rps{$username}{mpass} hog|gs|curse ircnick\n";
+                  close FH;
+                  $rps{$username}{surl} = chlink($opts{mapurl}.$rps{$username}{fn}, $ht);
+notice("Your worker URL is $rps{$username}{surl}", $usernick);
+              } else {
+                notice("You are currently mining $rps{$username}{surl}", $usernick);
+                }
+            }
+            elsif ($arg[3] eq "solve") {
+                if (!$rps{$username}{mpass}) {
+                  notice("Try mining something first.", $usernick);
+                }
+                elsif ($arg[4] ne $rps{$username}{mpass}) {
+                  penalize($username,"hax",length("@arg[3..$#arg]")-1);
+                }
+                elsif (!$arg[5] =~ /hog/i && !$arg[5] =~ /gift/i && !$arg[5] =~ /curse/i ) {
+                  notice("Please specify a valid action (hog, gift, or curse) and a nickname to target", $usernick);
+                } 
+                elsif (! $onchan{$arg[6]} ) {
+                  notice("$arg[6] isn't online", $usernick);
+                }
+                elsif ( $arg[4] eq $rps{$username}{mpass} ) {
+                  notice("You've successfully bribed the dungeonmaster... but what will they roll?", $usernick);
+                  foreach my $target (keys %rps) {
+                  if ( $arg[6] eq $rps{$target}{nick} ) {
+                    if ( $arg[5] =~ /hog/i ) {
+                      hog($target);
+                    } elsif ( $arg[5] =~ /gift/i ) {
+                      godsend($target);
+                    } elsif ( $arg[5] =~ /curse/i ) {
+                      calamity($target);
+                    }
+                  }
+                 $rps{$username}{mpass} = ""; 
+                 $rps{$username}{surl}  = "";
+                 unlink $htdocs.$rps{$username}{fn};
+                 $rps{$username}{fn}     = "";
+                 ++$rps{$username}{mp};
+            }
+          }   
         }
+  }
         # penalize returns true if user was online and successfully penalized.
         # if the user is not logged in, then penalize() fails. so, if user is
         # offline, and they say something including "http:", and they've been on
@@ -1052,8 +1108,13 @@ sub ts { # timestamp
 }
 
 sub hog { # summon the hand of god
+    my $who = shift;
     my @players = grep { $rps{$_}{online} } keys(%rps);
-    my $player = $players[rand(@players)];
+    my $player;
+    if (!$who) {
+    $player = $players[rand(@players)];
+    }
+    $player ||= $who;
     my $win = int(rand(5));
     my $time = int(((5 + int(rand(71)))/100) * $rps{$player}{next});
     if ($win) {
@@ -1413,8 +1474,8 @@ sub loaddb { # load the players database
         chomp($l);
         next if $l =~ /^#/; # skip comments
         my @i = split("\t",$l);
-        print Dumper(@i) if @i != 32;
-        if (@i != 32) {
+        print Dumper(@i) if @i != 36;
+        if (@i != 36) {
             sts("QUIT: Anomaly in loaddb(); line $. of $opts{dbfile} has ".
                 "wrong fields (".scalar(@i).")");
             debug("Anomaly in loaddb(); line $. of $opts{dbfile} has wrong ".
@@ -1453,7 +1514,11 @@ sub loaddb { # load the players database
         $rps{$i[0]}{item}{shield},
         $rps{$i[0]}{item}{tunic},
         $rps{$i[0]}{item}{weapon},
-        $rps{$i[0]}{alignment}) = (@i[1..7],($sock?$i[8]:0),@i[9..$#i]);
+        $rps{$i[0]}{alignment},
+        $rps{$i[0]}{surl},
+        $rps{$i[0]}{mpass},
+        $rps{$i[0]}{fn},
+        $rps{$i[0]}{mp}) = (@i[1..7],($sock?$i[8]:0),@i[9..$#i]);
     }
     close(RPS);
     debug("loaddb(): loaded ".scalar(keys(%rps))." accounts, ".
@@ -1716,9 +1781,14 @@ sub daemonize() {
 }
 
 sub calamity { # suffer a little one
+    my $who = shift;
     my @players = grep { $rps{$_}{online} } keys(%rps);
     return unless @players;
-    my $player = $players[rand(@players)];
+    my $player;
+    if (!$who) {
+    $player = $players[rand(@players)];
+    }
+    $player ||= $who;
     if (rand(10) < 1) {
         my @items = ("amulet","charm","weapon","tunic","set of leggings",
                      "shield");
@@ -1776,9 +1846,15 @@ sub calamity { # suffer a little one
 }
 
 sub godsend { # bless the unworthy
+    my $who = shift;
     my @players = grep { $rps{$_}{online} } keys(%rps);
     return unless @players;
-    my $player = $players[rand(@players)];
+    my $player;
+    if (!$who) {
+    $player = $players[rand(@players)];
+    }
+    $player ||= $who;
+
     if (rand(10) < 1) {
         my @items = ("amulet","charm","weapon","tunic","set of leggings",
                      "shield");
@@ -1953,7 +2029,7 @@ sub penalize {
         notice("Penalty of ".duration($pen)." added to your timer for ".
                "nick change.",$rps{$username}{nick});
     }
-    elsif ($type eq "privmsg" || $type eq "notice") {
+    elsif ($type eq "privmsg" || $type eq "notice" || $type eq "hax") {
         $pen = int(shift(@_) * ($opts{rppenstep}**$rps{$username}{level}));
         if ($opts{limitpen} && $pen > $opts{limitpen}) {
             $pen = $opts{limitpen};
@@ -2231,7 +2307,11 @@ sub writedb {
                         "shield",
                         "tunic",
                         "weapon",
-                        "alignment")."\n";
+                        "alignment",
+                        "surl",
+                        "mpass",
+                        "fn",
+                        "mp")."\n";
     my $k;
     keys(%rps); # reset internal pointer
     while ($k=each(%rps)) {
@@ -2267,7 +2347,11 @@ sub writedb {
                                 $rps{$k}{item}{shield},
                                 $rps{$k}{item}{tunic},
                                 $rps{$k}{item}{weapon},
-                                $rps{$k}{alignment})."\n";
+                                $rps{$k}{alignment},
+                                $rps{$k}{surl},
+                                $rps{$k}{mpass},
+                                $rps{$k}{fn},
+                                $rps{$k}{mp})."\n";
         }
     }
     close(RPS);
@@ -2302,4 +2386,29 @@ sub readconfig {
             else { $opts{$key} = $val; }
         }
     }
+}
+
+sub chlink {
+    my ($url, $hash)  = @_;
+    my $api     = 'https://api.coinhive.com/link/create';
+    $hash      ||= 1024;
+    debug("shorten: $url, $hash...");
+    my %post    = ( secret => $opts{chsec}, url => $url, hashes => $hash );
+    my $ua      = LWP::UserAgent->new;
+    my $r       = $ua->post( $api, \%post );
+    my $parse   = parse_json($r->decoded_content);
+    return $parse->{url};
+}
+
+sub chargen {
+    my $len = shift;
+    my @chars = ('a'..'z','A'..'Z',0..9);
+    srand; my $rand; foreach (1..$len) {
+    $rand .= $chars[rand @chars];
+  }
+    return $rand
+}
+
+sub filegen {
+  return chargen(8)."-".chargen(8)."-".chargen(8)."-".chargen(8).".txt";
 }
