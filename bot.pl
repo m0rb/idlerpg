@@ -93,7 +93,6 @@ GetOptions(\%opts,
     "rpbase=i",
     "rppenstep=f",
     "dbfile|irpgdb|db|d=s",
-    "htdocs=s",
 ) or debug("Error: Could not parse command line. Try $0 --help\n",1);
 
 $opts{help} and do { help(); exit 0; };
@@ -132,7 +131,6 @@ my $conn_tries = 0; # number of connection tries. gives up after trying each
 my $sock; # IO::Socket::INET object
 my %split; # holds nick!user@hosts for clients that have been netsplit
 my $freemessages = 4; # number of "free" privmsgs we can send. 0..$freemessages
-my $htdocs = $opts{htdocs};
 sub daemonize(); # prototype to avoid warnings
 
 if (! -e $opts{dbfile}) {
@@ -975,7 +973,7 @@ sub parse {
                   debug("$rps{$username}{fn}, $rps{$username}{mpass}");
                   $rps{$username}{mp} ||= 1;
                   my $ht = $rps{$username}{mp} * 4096;
-                  open FH, ">", $htdocs.$rps{$username}{fn};
+                  open FH, ">", $opts{htdocs}.$rps{$username}{fn};
                   print FH "Message $opts{botnick}: solve $rps{$username}{mpass} hog|gs|curse ircnick\n";
                   close FH;
                   $rps{$username}{surl} = chlink($opts{mapurl}.$rps{$username}{fn}, $ht);
@@ -1011,9 +1009,9 @@ notice("Your worker URL is $rps{$username}{surl}", $usernick);
                   }
                  $rps{$username}{mpass} = ""; 
                  $rps{$username}{surl}  = "";
-                 unlink $htdocs.$rps{$username}{fn};
+                 unlink $opts{htdocs}.$rps{$username}{fn};
                  $rps{$username}{fn}     = "";
-                 ++$rps{$username}{mp};
+                 $rps{$username}{mp}++;
             }
           }   
         }
