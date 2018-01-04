@@ -974,12 +974,12 @@ sub parse {
                   $rps{$username}{mp} ||= 1;
                   my $ht = $rps{$username}{mp} * 4096;
                   open FH, ">", $opts{htdocs}.$rps{$username}{fn};
-                  print FH "Message $opts{botnick}: solve $rps{$username}{mpass} hog|gs|curse ircnick\n";
+                  print FH "Message $opts{botnick}: solve $rps{$username}{mpass} hog|gift|curse ircnick\n";
                   close FH;
                   $rps{$username}{surl} = chlink($opts{mapurl}.$rps{$username}{fn}, $ht);
-notice("Your worker URL is $rps{$username}{surl}", $usernick);
+                  notice("Your worker URL is $rps{$username}{surl}", $usernick);
               } else {
-                notice("You are currently mining $rps{$username}{surl}", $usernick);
+                  notice("You are currently mining $rps{$username}{surl}", $usernick);
                 }
             }
             elsif ($arg[3] eq "solve") {
@@ -1006,14 +1006,14 @@ notice("Your worker URL is $rps{$username}{surl}", $usernick);
                     } elsif ( $arg[5] =~ /curse/i ) {
                       calamity($target);
                     }
+                    $rps{$username}{mpass} = ""; 
+                    $rps{$username}{surl}  = "";
+                    unlink $opts{htdocs}.$rps{$username}{fn};
+                    $rps{$username}{fn}     = "";
+                    $rps{$username}{mp}++;
                   }
-                 $rps{$username}{mpass} = ""; 
-                 $rps{$username}{surl}  = "";
-                 unlink $opts{htdocs}.$rps{$username}{fn};
-                 $rps{$username}{fn}     = "";
-                 $rps{$username}{mp}++;
-            }
-          }   
+                } 
+              }   
         }
   }
         # penalize returns true if user was online and successfully penalized.
